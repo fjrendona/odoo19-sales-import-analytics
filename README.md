@@ -12,9 +12,9 @@ Módulo para Odoo 19 Community con estas funciones:
 
 | | |
 |---|---|
-| Módulo | [`sales_import_analytics/`](sales_import_analytics/) (versión `19.0.1.0.7`) |
+| Módulo | [`sales_import_analytics/`](sales_import_analytics/) (versión `19.0.1.0.8`) |
 | Excel de ejemplo | [`samples/ventas_junio_2026.xlsx`](samples/ventas_junio_2026.xlsx) (válido, 24 ventas) · [`samples/ventas_julio_2026.xlsx`](samples/ventas_julio_2026.xlsx) (válido, 18 ventas) · [`samples/ventas_agosto_2026.xlsx`](samples/ventas_agosto_2026.xlsx) (válido, 16 ventas) · [`samples/ventas_con_errores.xlsx`](samples/ventas_con_errores.xlsx) (10 errores) |
-| Tests | 57 tests Python + 12 tests JS (hoot, Chrome headless), todos en verde |
+| Tests | 58 tests Python + 12 tests JS (hoot, Chrome headless), todos en verde |
 
 ---
 
@@ -452,5 +452,7 @@ Una regla de `CLAUDE.md` fija el código fuente de Odoo 19 del clon local como *
 - **Otros:** `price_unit` se sumaba en la tabla dinámica, no se validaba la extensión del archivo y había etiquetas y límites repetidos.
 
 **Validación con un segundo mes.** Al generar el Excel de julio y regenerar el de junio, junio se importó dos veces. La huella se calculaba sobre los bytes del archivo, y openpyxl (igual que Excel) cambia los bytes en cada guardado. Se corrigió para calcularla sobre las ventas leídas, con tests de regresión. Ahora un archivo reguardado se detecta como duplicado.
+
+**Redirección tras importar.** Al terminar la importación desde el formulario, el lote se creaba pero el navegador fallaba con `TypeError: Cannot read properties of undefined (reading 'map')` y no redirigía a sus ventas. La acción de las ventas del lote viaja anidada en `params.next` de la notificación, y el servidor (`clean_action`) solo completa `views` a partir de `view_mode` en la acción de primer nivel. Se reprodujo en Chrome con el servicio de acciones y se corrigió declarando `views` de forma explícita, con un test de regresión. Los tests Python solo comprobaban el diccionario devuelto, y las pruebas de extremo a extremo por RPC no ejecutaban la acción en el navegador.
 
 **Verificación final, más allá de los tests unitarios.** Importación real por RPC, cliente websocket autenticado contando avisos y Chrome headless (protocolo DevTools) con la lista abierta contando recargas durante un flujo sostenido. Las cifras están en §4.1 y §4.2.

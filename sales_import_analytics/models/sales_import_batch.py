@@ -38,11 +38,16 @@ class SalesImportBatch(models.Model):
     )
 
     def action_open_records(self):
+        """``views`` explícito: esta acción también se usa anidada en ``params.next``
+        de la notificación del asistente, y ahí el servidor no la completa a partir
+        de ``view_mode`` (``clean_action`` solo procesa la acción de primer nivel).
+        Sin ``views`` el cliente falla con un TypeError al redirigir."""
         self.ensure_one()
         return {
             "type": "ir.actions.act_window",
             "name": self.env._("Ventas de %(batch)s", batch=self.name),
             "res_model": "sales.import.record",
             "view_mode": "list,form",
+            "views": [(False, "list"), (False, "form")],
             "domain": [("batch_id", "=", self.id)],
         }
