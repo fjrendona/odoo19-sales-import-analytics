@@ -1,4 +1,6 @@
-# Prueba técnica Odoo 19: `sales_import_analytics`
+# `sales_import_analytics`: importación y análisis de ventas para Odoo 19
+
+> Desarrollado como solución a la prueba técnica de un proceso de selección para desarrollador Odoo 19.
 
 Módulo para Odoo 19 Community con estas funciones:
 
