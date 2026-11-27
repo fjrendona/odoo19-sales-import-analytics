@@ -9,12 +9,13 @@ Módulo para Odoo 19 Community con estas funciones:
 3. **Guardarlas** en un modelo propio.
 4. **Analizarlas** en un tablero con gráfico y tabla dinámica.
 5. **Mostrar en tiempo real** en la lista de ventas los registros nuevos que crean otros usuarios o procesos, sin recargar la página y sin polling.
+6. **Versionar lotes:** si el Excel trae la columna opcional *Referencia*, reconoce que un archivo corregido es una nueva versión (o una corrección parcial) de un lote ya importado, lo compara fila por fila y deja decidir antes de guardar. El tablero solo cuenta la versión vigente.
 
 | | |
 |---|---|
-| Módulo | [`sales_import_analytics/`](sales_import_analytics/) (versión `19.0.1.0.8`) |
-| Excel de ejemplo | [`samples/ventas_junio_2026.xlsx`](samples/ventas_junio_2026.xlsx) (válido, 24 ventas) · [`samples/ventas_julio_2026.xlsx`](samples/ventas_julio_2026.xlsx) (válido, 18 ventas) · [`samples/ventas_agosto_2026.xlsx`](samples/ventas_agosto_2026.xlsx) (válido, 16 ventas) · [`samples/ventas_con_errores.xlsx`](samples/ventas_con_errores.xlsx) (10 errores) |
-| Tests | 58 tests Python + 12 tests JS (hoot, Chrome headless), todos en verde |
+| Módulo | [`sales_import_analytics/`](sales_import_analytics/) (versión `19.0.1.1.0`) |
+| Excel de ejemplo | [`samples/ventas_junio_2026.xlsx`](samples/ventas_junio_2026.xlsx) (válido, 24 ventas) · [`samples/ventas_julio_2026.xlsx`](samples/ventas_julio_2026.xlsx) (válido, 18 ventas) · [`samples/ventas_agosto_2026.xlsx`](samples/ventas_agosto_2026.xlsx) (válido, 16 ventas) · [`samples/ventas_con_errores.xlsx`](samples/ventas_con_errores.xlsx) (10 errores) · [`samples/ventas_septiembre_2026.xlsx`](samples/ventas_septiembre_2026.xlsx) (con *Referencia*, 23 ventas), [`_v2`](samples/ventas_septiembre_2026_v2.xlsx) (nueva versión) y [`_correccion`](samples/ventas_septiembre_2026_correccion.xlsx) (corrección parcial) |
+| Tests | 92 tests Python + 13 tests JS (hoot, Chrome headless), todos en verde |
 
 ---
 
@@ -87,12 +88,15 @@ La aplicación **Análisis de Ventas** tiene estos menús:
 | **Tablero** | Gráfico de barras por mes con los estados **apilados** (Confirmada, Borrador, Cancelada), tabla dinámica mes × estado y lista. El segmento *Confirmada* es el total vendido; el filtro **Confirmadas** está a un clic. |
 | **Ventas** | Lista en tiempo real, formulario, gráfico y tabla dinámica. Búsqueda y agrupación por vendedor, cliente, producto, estado, mes y lote. |
 | **Importar Excel** | Asistente de importación. |
-| **Configuración → Lotes de importación** | Cada archivo importado: quién lo importó, cuándo, cuántas ventas y cuántos maestros nuevos creó. Borrar un lote deshace esa importación. |
+| **Configuración → Lotes de importación** | Cada archivo importado: quién lo importó, cuándo, cuántas ventas y cuántos maestros nuevos creó. Borrar un lote deshace esa importación. Por defecto muestra los lotes **vigentes**; en la pestaña *Versiones* de un lote se ve su historial, qué cambió en cada versión y el botón **Restaurar**. |
+| **Configuración → Ajustes** | Umbral de coincidencia para reconocer versiones (80 % por defecto). Solo administradores. |
 | **Configuración → Vendedores** | Catálogo de vendedores, con enlace opcional a un usuario de Odoo. |
 
 ### Formato del Excel
 
 `Fecha | Cliente | Vendedor | Producto | Cantidad | Valor Unitario | Valor Total | Estado`
+
+Columna opcional: **`Referencia`** (por ejemplo, el número de factura). Si la cabecera existe, cada fila debe traerla y no puede repetirse en el archivo. Es la clave que permite comparar versiones de un lote (§3, *Versionamiento de lotes*). Sin ella, el importador se comporta exactamente como antes.
 
 El importador tolera las variaciones habituales de un archivo hecho a mano:
 
@@ -131,6 +135,12 @@ Límites: 5 MB y 10.000 filas por archivo.
 
    Crea una venta cada 300 ms durante 20 s. En la pestaña *Red* de las herramientas de desarrollo se ve una recarga cada 2 s mientras dura el flujo, y ninguna cuando se detiene.
 
+7. **Versiones de un lote** (requiere el perfil *Responsable*):
+   1. Importa `samples/ventas_septiembre_2026.xlsx` (23 ventas con referencia).
+   2. Importa `samples/ventas_septiembre_2026_v2.xlsx`. En lugar de importarse como lote nuevo, el asistente pasa a **Comparar con el lote existente**: *21 sin cambios, 1 actualizada (FV-0905, cantidad 12 → 14), 1 nueva (FV-0924) y 1 que falta en el archivo (FV-0923)*. Todavía no se ha guardado nada.
+   3. **Guardar como nueva versión** crea la v2 con 24 ventas: la que falta se conserva porque no se marcó *Eliminar*. La v1 queda como *Reemplazada* y el tablero de septiembre cuenta solo la v2. Desde el lote, *Restaurar* vuelve a la v1.
+   4. Antes, vuelve a dejar vigente la v1: abre el lote v2, pestaña *Versiones*, y pulsa **Restaurar** en la v1. La corrección trae los mismos cambios que la v2, así que contra la v2 el asistente responde que *el archivo no trae cambios respecto al lote vigente*. Con la v1 vigente, importa `samples/ventas_septiembre_2026_correccion.xlsx` (5 ventas, 4 ya importadas). Se reconoce como **corrección parcial** y ofrece **Aplicar solo los cambios al lote existente**: actualiza FV-0905 y agrega FV-0924 en el mismo lote, sin tocar las otras 19 ventas.
+
 Los Excel se regeneran con `python3 scripts/generate_sample_excels.py`.
 
 ---
@@ -152,9 +162,13 @@ flowchart TD
     H --> I
     I -- Sí --> X3["Todo o nada: no se crea ninguna venta.<br/>Se listan todos los errores con fila y columna"]
     X3 -. "corregir el archivo" .-> B
-    I -- No --> D{"¿Mismas ventas que un lote anterior?<br/>(huella SHA-256 del contenido)"}
+    I -- No --> D{"¿Mismas ventas que un lote vigente?<br/>(huella SHA-256 del contenido)"}
     D -- "Sí, sin forzar" --> X2["Bloqueado: indica el lote previo"]
-    D -- "No, o forzado" --> J["Crear maestros faltantes<br/>(sudo acotado · solo Responsable)"]
+    D -- "Sí, forzado" --> J["Crear maestros faltantes<br/>(sudo acotado · solo Responsable)"]
+    D -- No --> VV{"¿Trae Referencia y se parece<br/>a un lote vigente? (umbral)"}
+    VV -- No --> J
+    VV -- "Sí" --> CMP["Comparar fila por fila y esperar la decisión:<br/>nueva versión · reemplazar · aplicar corrección · cancelar"]
+    CMP --> J
     J --> K["Crear el lote y las ventas<br/>en un único create()"]
     K --> L["Aviso: N ventas importadas<br/>y maestros nuevos · abre las ventas del lote"]
     K --> M[/"commit → UN aviso de bus<br/>al grupo del módulo"/]
@@ -175,9 +189,11 @@ Las ventas creadas a mano o por una integración pasan por las mismas validacion
 | Modelo | Propósito |
 |---|---|
 | `sales.import.record` | La venta. `Many2one` a `res.partner`, `product.product` y al vendedor; importes `Monetary` en la moneda de la compañía; `state` (`draft` / `confirmed` / `cancelled`). Índices en fecha, cliente, vendedor, producto, estado y lote, que son las dimensiones del tablero. |
-| `sales.import.batch` | El lote: archivo, huella SHA-256 del contenido, número de ventas y de maestros creados. Las ventas se borran en cascada con él. |
+| `sales.import.batch` | El lote: archivo, huella SHA-256 del contenido, número de ventas y de maestros creados. Las ventas se borran en cascada con él. Cada versión es un lote completo enlazado con la anterior (`version`, `is_current`, `previous_batch_id`, `origin_batch_id`) y guarda cuántas ventas cambiaron. |
 | `sales.import.salesperson` | El vendedor tal como aparece en el Excel, con un `user_id` opcional. |
-| `sales.import.wizard` | El asistente (`TransientModel`). |
+| `sales.import.wizard` | El asistente (`TransientModel`), en dos pasos: archivo y, si hace falta, comparación con un lote existente. |
+| `sales.import.wizard.line` | Detalle de la comparación (`TransientModel`): solo las ventas actualizadas, nuevas o faltantes, con su resumen antes y después. |
+| `res.config.settings` | El umbral de coincidencia, guardado en el parámetro del sistema `sales_import_analytics.version_match_threshold`. |
 
 ### Decisiones
 
@@ -191,7 +207,43 @@ Las ventas creadas a mano o por una integración pasan por las mismas validacion
 | Duplicados | Por archivo, no por fila, con una huella SHA-256 de las **ventas leídas** (nombres normalizados, sin importar el orden) y no de los bytes | Dos filas iguales pueden ser dos ventas reales; el mismo archivo dos veces, no. Excel guarda metadatos como la fecha de guardado, así que un hash de los bytes no detectaría un archivo abierto y vuelto a guardar sin cambios. |
 | "Total del mes" | Agrupación por mes de la fecha de venta, con los estados apilados en el gráfico | Un filtro "este mes" dejaría vacío el tablero para datos de junio de 2026. Apilar por estado separa el total vendido (*Confirmada*) sin ocultar borradores ni canceladas; un filtro por defecto las hacía invisibles. |
 | Tablero | Vistas nativas graph y pivot | Cubren el enunciado sin reimplementar gráficos. |
+| Versiones | Columna *Referencia* opcional y una versión = un lote completo | Ver *Versionamiento de lotes*. |
 | Multicompañía | `company_id` y reglas estándar en ventas y lotes | Patrón idiomático de Odoo y de bajo coste. |
+
+### Versionamiento de lotes
+
+**El problema.** Si alguien corrige una venta del Excel de junio y lo vuelve a subir, la huella cambia y el archivo entraba como un lote nuevo: el tablero contaba junio dos veces y la única salida era borrar a mano el lote anterior.
+
+**La clave: la columna `Referencia`.** Comparar versiones fila por fila exige saber qué venta del archivo nuevo corresponde a cuál del lote. El Excel original no trae ningún identificador, y el contenido no sirve como clave: dos filas iguales pueden ser dos ventas reales, y una clave sacada del contenido cambia justo cuando la venta se corrige (una venta *actualizada* parecería una *faltante* más una *nueva*). Por eso se añade una columna opcional *Referencia* (el número de factura o de pedido). Los archivos sin ella funcionan como antes y nunca se tratan como versiones.
+
+**Detección.** Si la huella no coincide con un lote vigente, se buscan los lotes vigentes de la misma compañía que tengan referencias en común con el archivo y algún mes de venta en común. Para cada uno se calculan dos coberturas: la del lote (qué parte de sus ventas viene en el archivo) y la del archivo (qué parte de sus ventas ya está en el lote). El umbral (*U*, 80 % por defecto) se cambia en *Ajustes*.
+
+| Situación | Resultado | Qué ofrece el asistente |
+|---|---|---|
+| Cobertura del lote ≥ *U* | **Nueva versión** | Guardar como nueva versión · Reemplazar lote · Cancelar |
+| Cobertura del archivo ≥ *U* y cobertura del lote < 50 % | **Corrección parcial**: pocas filas, casi todas conocidas | Aplicar solo los cambios al lote existente · Cancelar |
+| Cobertura del archivo ≥ *U* y cobertura del lote entre 50 % y *U* | **Nueva versión** | Igual que la primera fila. Importarlo como lote aparte duplicaría esas ventas. |
+| Cualquier otro caso | Lote nuevo, como siempre | Importa directamente |
+
+Son dos consultas agregadas (`_read_group`), sea cual sea el número de lotes. La clasificación y la comparación (`tools/batch_diff.py`) son funciones puras, sin ORM, como el parser.
+
+**Comparación.** Por referencia: *sin cambios*, *actualizada* (mismos datos tras resolver cliente, producto y vendedor, e importes redondeados a la moneda), *nueva* o *falta en el archivo*. El asistente muestra los conteos y el detalle antes y después. Hasta que el usuario confirma **no se crean ni cambian ventas ni lotes**; al confirmar se vuelve a leer y comparar el archivo, por si el lote cambió mientras tanto.
+
+| Acción | Efecto |
+|---|---|
+| **Guardar como nueva versión** | Crea un lote `vN+1` con todas las ventas: las del archivo y las que faltan en él, salvo las marcadas *Eliminar*. La versión anterior queda como *Reemplazada*. Un solo `create` y un solo aviso de bus. |
+| **Reemplazar lote** | Borra el lote con **todas** sus versiones y sus ventas, e importa el archivo como versión 1, sin historial. |
+| **Aplicar solo los cambios al lote existente** | Corrección parcial: actualiza y agrega las ventas del archivo **en el mismo lote**, sin versión nueva y sin tocar las demás. |
+| **Restaurar** (desde el lote) | Hace vigente una versión anterior. Es inmediato porque cada versión es completa. |
+
+**Decisiones:**
+
+- **Una versión es un lote completo, no un delta.** Restaurar es mover la marca de vigencia y cada versión se consulta sola. Cuesta duplicar filas, aceptable con el límite de 10.000 filas por archivo.
+- **El tablero solo cuenta lo vigente.** `is_current` es un campo almacenado e indexado en la venta (verdadero también para las ventas creadas a mano). Las acciones *Tablero* y *Ventas* filtran por él; las ventas de una versión reemplazada siguen consultables desde su lote.
+- **Las faltantes no se borran solas.** Se listan y el usuario decide cuáles eliminar; sin marcar, pasan a la nueva versión.
+- **Solo un *Responsable*** crea, reemplaza, corrige o restaura versiones, porque escribe o borra lotes. Un *Usuario* recibe un mensaje claro.
+- **Duplicado exacto, igual que antes,** pero solo frente a lotes **vigentes**: volver a subir el contenido de una versión reemplazada propone una nueva versión en lugar de bloquearse (o de importarse duplicado al forzar).
+- **Sin script de migración.** Los campos nuevos tienen valores por defecto (`version=1`, `is_current=True`), así que los lotes existentes quedan como versión 1 vigente al actualizar el módulo. La huella de un archivo sin *Referencia* no cambia.
 
 ### Seguridad
 
@@ -214,9 +266,11 @@ Las ventas creadas a mano o por una integración pasan por las mismas validacion
 sales_import_analytics/
 ├── models/            venta, lote y vendedor (invariantes y aviso de bus)
 ├── tools/             sales_excel_parser.py: lectura y validación pura, sin ORM (bytes → filas + errores)
-├── wizard/            orquestación: comprobar duplicado, parsear, resolver referencias y crear
+│                      batch_diff.py: comparación por referencia y clasificación versión / corrección parcial
+├── wizard/            orquestación: comprobar duplicado, parsear, resolver referencias, comparar y crear
 ├── security/          privilegio, grupos, reglas multicompañía y ACL
-├── views/             lista (js_class), formulario, búsqueda, gráfico, tabla dinámica y menús
+├── data/              parámetro del sistema con el umbral de versiones
+├── views/             lista (js_class), formulario, búsqueda, gráfico, tabla dinámica, ajustes y menús
 ├── static/src/        trailing_throttle.js y el controlador de la lista en tiempo real
 ├── static/tests/      tests hoot (throttle y controlador)
 └── tests/             tests Python y el runner de los tests JS
@@ -368,6 +422,8 @@ Aun así, lo correcto sería un componente que **envuelva** la vista nativa (con
 - **Si llega después:** ya no hay nadie escuchando.
 - **Si había una recarga en curso** (`model.load()` esperando la respuesta del servidor cuando el usuario sale): la guarda `status(this) === "destroyed"` impide lanzar recargas nuevas, y OWL ignora el renderizado de un componente destruido. No hay errores ni peticiones fantasma.
 
+**Qué pasa si llega un aviso justo al entrar.** La lista nativa de Odoo 19 se monta *antes* de tener datos (carga diferida: el panel de control aparece enseguida) y `model.load()` descarta cualquier carga anterior que siga pendiente (`keepLast`). Si el aviso llega durante la carga inicial (es lo que ocurre al guardar una versión de un lote: se abren sus ventas y en ese momento llega el aviso de esas mismas ventas), una recarga inmediata dejaba la carga inicial sin terminar y la lista **en blanco**. Por eso el controlador no recarga hasta que el modelo está listo (`model.isReady`): el aviso queda pendiente en el throttle y la lista recarga en la ventana siguiente, sin perderlo. Lo cubre el test *"a notification during the initial load does not break the list"*.
+
 El test *"after destroying the view nothing listens nor reloads"* ([`sales_realtime_list.test.js`](sales_import_analytics/static/tests/sales_realtime_list.test.js)) lo comprueba así: deja una recarga pendiente, destruye la vista, avanza el tiempo, envía otro aviso y verifica que no hay ninguna petición.
 
 ---
@@ -376,12 +432,14 @@ El test *"after destroying the view nothing listens nor reloads"* ([`sales_realt
 
 | Archivo | Qué cubre |
 |---|---|
-| `test_sales_excel_parser.py` | Cabeceras tolerantes, formatos de fecha y número, variantes de estado, filas vacías; cada error de fila y de archivo (no Excel, vacío, sin cabeceras, sin filas, límite de filas); reporte completo con número de fila. |
+| `test_sales_excel_parser.py` | Cabeceras tolerantes, formatos de fecha y número, variantes de estado, filas vacías; cada error de fila y de archivo (no Excel, vacío, sin cabeceras, sin filas, límite de filas); reporte completo con número de fila. Columna *Referencia*: opcional, obligatoria por fila si existe, sin repetirse; la huella de un archivo sin ella no cambia. |
+| `test_batch_diff.py` | Comparación pura por referencia (sin cambios, actualizada, nueva, faltante) y clasificación versión / corrección parcial / ninguna en sus fronteras. |
+| `test_batch_versioning.py` | Nada se escribe hasta confirmar; nueva versión con ventas sin cambios, actualizadas y nuevas; faltante conservada y confirmada; reemplazo completo; corrección parcial (detección, aplicación en el mismo lote y archivo completo posterior sin cambios); frontera 50 %–umbral; debajo del umbral; meses distintos; sin columna *Referencia*; duplicado exacto y forzado; Usuario sin permiso; cada acción solo vale para el tipo detectado; lote cambiado durante la revisión; restaurar; borrar la versión vigente; reimportar una versión reemplazada; tablero solo con lo vigente; un aviso de bus por versión; umbral desde *Ajustes* y su validación; lotes existentes como v1 vigente. |
 | `test_sales_import_record.py` | Restricciones SQL y de coherencia (también al editar), tolerancia de redondeo, vendedor único sin distinguir mayúsculas, aislamiento multicompañía, agregación del tablero por mes. |
 | `test_sales_import_wizard.py` | Importación completa, unificación de variantes, reutilización de maestros, que nunca se crea `res.users`, todo o nada, archivo inválido y límite de tamaño, duplicado y forzado, Usuario frente a Responsable, borrado en cascada y permisos, **10.000 filas en menos de 30 s**. |
 | `test_realtime_notification.py` | Un aviso por lote, ninguno sin registros, canal, tipo y payload vacío; una importación genera un solo aviso. |
 | `static/tests/trailing_throttle.test.js` | Ráfaga, flujo sostenido, disparo final garantizado, cancelación, llamada reentrante y contraste con el debounce. |
-| `static/tests/sales_realtime_list.test.js` | La lista nativa recarga ante un aviso; una ráfaga produce 2 recargas; tras destruir la vista no hay oyentes ni recargas; ni una edición en línea ni una selección de filas se pierden. |
+| `static/tests/sales_realtime_list.test.js` | La lista nativa recarga ante un aviso; una ráfaga produce 2 recargas; tras destruir la vista no hay oyentes ni recargas; ni una edición en línea ni una selección de filas se pierden; un aviso durante la carga inicial no deja la lista en blanco. |
 
 ---
 
@@ -393,7 +451,10 @@ El test *"after destroying the view nothing listens nor reloads"* ([`sales_realt
 - Los colores del gráfico los asigna Odoo por orden de serie, no por estado (por ejemplo, *Confirmada* puede salir en rojo). Fijarlos exigiría parchear el renderer del gráfico.
 - Los importes de los mensajes de error se formatean con separadores fijos (`9,840,000.00`), no con los del idioma del usuario.
 - **Escala de la resolución de referencias.** Se hace una consulta por modelo, pero cada consulta es un `OR` de condiciones `=ilike`, una por nombre distinto. Con cientos de nombres por archivo (el caso de un mes de ventas) es inmediato. Con miles de nombres distintos contra cientos de miles de contactos convendría una sola comparación `lower(name) IN (...)` con la clase `SQL`.
-- Si se borra un lote o una venta, las listas abiertas no se recargan: el aviso en tiempo real cubre las creaciones, que es lo que pide el enunciado. Las ventas borradas desaparecen en la siguiente recarga.
+- Si se borra un lote o una venta, las listas abiertas no se recargan: el aviso en tiempo real cubre las creaciones, que es lo que pide el enunciado. Las ventas borradas desaparecen en la siguiente recarga. Restaurar una versión y aplicar una corrección parcial sí avisan, porque cambian las ventas vigentes.
+- **Corrección parcial sin historial.** Se aplica sobre el mismo lote, como pidió el negocio: el valor anterior de las ventas corregidas solo queda en el resumen que se mostró antes de confirmar. Si hace falta conservarlo, se puede guardar como nueva versión volviendo a subir el archivo completo.
+- **Versiones concurrentes.** Si dos Responsables confirman a la vez una versión del mismo lote, ambas transacciones podrían ver el lote vigente. Lo cubriría un bloqueo de fila (`SELECT … FOR UPDATE`) sobre el lote candidato al confirmar.
+- Los resúmenes antes/después de la comparación se recortan en la lista. El texto completo aparece al pasar el ratón.
 
 ---
 
@@ -454,5 +515,13 @@ Una regla de `CLAUDE.md` fija el código fuente de Odoo 19 del clon local como *
 **Validación con un segundo mes.** Al generar el Excel de julio y regenerar el de junio, junio se importó dos veces. La huella se calculaba sobre los bytes del archivo, y openpyxl (igual que Excel) cambia los bytes en cada guardado. Se corrigió para calcularla sobre las ventas leídas, con tests de regresión. Ahora un archivo reguardado se detecta como duplicado.
 
 **Redirección tras importar.** Al terminar la importación desde el formulario, el lote se creaba pero el navegador fallaba con `TypeError: Cannot read properties of undefined (reading 'map')` y no redirigía a sus ventas. La acción de las ventas del lote viaja anidada en `params.next` de la notificación, y el servidor (`clean_action`) solo completa `views` a partir de `view_mode` en la acción de primer nivel. Se reprodujo en Chrome con el servicio de acciones y se corrigió declarando `views` de forma explícita, con un test de regresión. Los tests Python solo comprobaban el diccionario devuelto, y las pruebas de extremo a extremo por RPC no ejecutaban la acción en el navegador.
+
+**Versionamiento de lotes (incremento posterior).** Antes de programar, el agente revisó el código y avisó de que **las ventas no tenían ninguna referencia única**: el Excel no trae un ID y el contenido no sirve como clave. Propuso una columna *Referencia* opcional y el desarrollador la aprobó. El desarrollador también ajustó el diseño: pidió que los lotes existentes quedaran como v1 sin script, exponer el umbral en *Ajustes* y añadir la **corrección parcial**, aplicada sobre el mismo lote en lugar de crear una versión. Problemas que encontraron los tests y la verificación con los Excel reales:
+
+- **Escribir `company_id`** al corregir una venta recalculaba la moneda, y la restricción del total se evaluaba con el importe antiguo. La corrección en el sitio ya no escribe lote ni compañía.
+- **Caché obsoleta.** `version_ids` era un campo calculado sin dependencia de las versiones nuevas: tras crear una, restaurar no veía la versión vigente. Se recalcula sobre un `One2many` inverso, que el ORM invalida solo.
+- **Versión reemplazada tratada como duplicado.** Tras restaurar la v1, volver a subir el archivo de la v2 se bloqueaba, y forzarlo creaba un lote duplicado. El duplicado exacto ahora solo se compara con lotes vigentes.
+- **Número de versión repetido** al crear una versión desde una restaurada. Ahora se numera con el máximo de la cadena.
+- **Lista en blanco tras guardar una versión** (encontrado por el desarrollador en la revisión manual). El servidor guardaba bien y devolvía las ventas, pero la lista no se pintaba. El log mostró dos lecturas de la lista con 50 ms de diferencia: la carga inicial y una recarga en tiempo real, porque el aviso de bus de esas mismas ventas llegó mientras la lista se abría. El agente lo reprodujo en Chrome headless (inyectando el aviso durante una carga retrasada) y encontró la causa en el código de Odoo 19. La lista se monta antes de tener datos y `model.load()` descarta la carga anterior (`keepLast`), así que la carga inicial no terminaba nunca. Un primer arreglo, comprobar `status(this) === "mounted"`, no bastaba precisamente por eso, y la reproducción lo descartó antes de darlo por bueno. La corrección espera a `model.isReady`, con un test hoot que falla sin ella. Lección: los tests con datos simulados no reproducían el orden real de los eventos, y hubo que forzarlo.
 
 **Verificación final, más allá de los tests unitarios.** Importación real por RPC, cliente websocket autenticado contando avisos y Chrome headless (protocolo DevTools) con la lista abierta contando recargas durante un flujo sostenido. Las cifras están en §4.1 y §4.2.

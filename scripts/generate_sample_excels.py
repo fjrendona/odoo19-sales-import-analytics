@@ -12,6 +12,15 @@
   importarlas con la lista de ventas abierta en otra sesión y ver la
   actualización en tiempo real.
 - ventas_con_errores.xlsx: un error de cada tipo, para ver el reporte completo.
+- ventas_septiembre_2026*.xlsx: traen la columna Referencia (número de factura)
+  para probar el versionamiento de lotes. Se importa primero
+  ventas_septiembre_2026.xlsx y después uno de estos dos:
+  - ventas_septiembre_2026_v2.xlsx: el mes completo con una venta corregida, una
+    nueva y una que falta. Se reconoce como nueva versión del lote.
+  - ventas_septiembre_2026_correccion.xlsx: solo cinco ventas, cuatro ya
+    importadas (una corregida) y una nueva. Se reconoce como corrección parcial.
+
+Todos los datos son ficticios.
 
 Uso (desde la raíz del repo): python3 scripts/generate_sample_excels.py
 """
@@ -101,6 +110,31 @@ AUGUST_SALES = [
 ]
 
 
+# Septiembre: las mismas ventas de junio, cada una con su número de factura.
+SEPTEMBER_SALES = [(f"FV-09{index:02d}", *sale) for index, sale in enumerate(JUNE_SALES, start=1)]
+SEPTEMBER_CORRECTED = "FV-0905"  # cantidad 12 -> 14 en la versión 2 y en la corrección
+SEPTEMBER_NEW_SALE = ("FV-0924", 30, "Panadería La Espiga", "Laura Méndez", "Microinversor 800W", 3, 1_150_000,
+                      "Confirmada")
+
+
+def september_v2_sales():
+    """Versión 2: una corregida, una nueva y sin la última (FV-0923)."""
+    sales = [_corrected(sale) for sale in SEPTEMBER_SALES[:-1]]
+    return [*sales, SEPTEMBER_NEW_SALE]
+
+
+def september_correction_sales():
+    """Corrección parcial: 4 de 23 ventas ya importadas (una corregida) y una nueva."""
+    return [_corrected(sale) for sale in SEPTEMBER_SALES[1:5]] + [SEPTEMBER_NEW_SALE]
+
+
+def _corrected(sale):
+    reference, day, partner, salesperson, product, quantity, price_unit, state = sale
+    if reference == SEPTEMBER_CORRECTED:
+        quantity = 14
+    return reference, day, partner, salesperson, product, quantity, price_unit, state
+
+
 def colombian(number):
     """1234.5 -> "1.234,5" (texto como lo escribiría una persona en Colombia)."""
     integer, _, decimals = f"{number:.2f}".partition(".")
@@ -138,6 +172,15 @@ def build_sales_workbook(title, month, sales, extra_rows=()):
             sheet.cell(sheet.max_row, 1).number_format = "yyyy-mm-dd"
     for row in extra_rows:
         sheet.append(row)
+        sheet.cell(sheet.max_row, 1).number_format = "yyyy-mm-dd"
+    return workbook
+
+
+def build_reference_workbook(title, month, sales):
+    workbook, sheet = new_sheet([*HEADERS, "Referencia"], title)
+    for reference, day, partner, salesperson, product, quantity, price_unit, state in sales:
+        sheet.append([datetime.date(2026, month, day), partner, salesperson, product, quantity, price_unit,
+                      quantity * price_unit, state, reference])
         sheet.cell(sheet.max_row, 1).number_format = "yyyy-mm-dd"
     return workbook
 
@@ -184,11 +227,22 @@ def main():
     build_sales_workbook("Ventas julio 2026", 7, JULY_SALES).save(SAMPLES_DIR / "ventas_julio_2026.xlsx")
     build_sales_workbook("Ventas agosto 2026", 8, AUGUST_SALES).save(SAMPLES_DIR / "ventas_agosto_2026.xlsx")
     build_invalid_workbook().save(SAMPLES_DIR / "ventas_con_errores.xlsx")
+    for suffix, sales in (
+        ("", SEPTEMBER_SALES),
+        ("_v2", september_v2_sales()),
+        ("_correccion", september_correction_sales()),
+    ):
+        build_reference_workbook("Ventas septiembre 2026", 9, sales).save(
+            SAMPLES_DIR / f"ventas_septiembre_2026{suffix}.xlsx"
+        )
 
     summarize("ventas_junio_2026.xlsx", JUNE_SALES, len(JUNE_EXTRA_ROWS), JUNE_EXTRA_CONFIRMED)
     summarize("ventas_julio_2026.xlsx", JULY_SALES)
     summarize("ventas_agosto_2026.xlsx", AUGUST_SALES)
     print("ventas_con_errores.xlsx: 11 filas (1 vacía), 10 errores esperados")
+    print(f"ventas_septiembre_2026.xlsx: {len(SEPTEMBER_SALES)} ventas con referencia")
+    print("ventas_septiembre_2026_v2.xlsx: versión 2 (1 actualizada, 1 nueva, 1 faltante)")
+    print("ventas_septiembre_2026_correccion.xlsx: corrección parcial (1 actualizada, 1 nueva)")
 
 
 if __name__ == "__main__":

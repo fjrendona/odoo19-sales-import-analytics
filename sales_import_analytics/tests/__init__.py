@@ -1,3 +1,5 @@
+from . import test_batch_diff
+from . import test_batch_versioning
 from . import test_js
 from . import test_realtime_notification
 from . import test_sales_excel_parser

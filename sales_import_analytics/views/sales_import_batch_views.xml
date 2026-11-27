@@ -5,9 +5,11 @@
         <field name="name">sales.import.batch.list</field>
         <field name="model">sales.import.batch</field>
         <field name="arch" type="xml">
-            <list string="Lotes de importación" create="False">
+            <list string="Lotes de importación" create="False" decoration-muted="not is_current">
                 <field name="create_date" string="Importado el"/>
                 <field name="name"/>
+                <field name="version"/>
+                <field name="is_current" widget="boolean_toggle" readonly="True"/>
                 <field name="create_uid" string="Importado por" widget="many2one_avatar_user"/>
                 <field name="record_count" sum="Total"/>
                 <field name="new_partner_count" optional="hide"/>
@@ -28,7 +30,12 @@
                         <button name="action_open_records" type="object" class="oe_stat_button" icon="fa-list">
                             <field name="record_count" widget="statinfo" string="Ventas"/>
                         </button>
+                        <button name="action_open_changes" type="object" class="oe_stat_button" icon="fa-exchange"
+                                invisible="version == 1">
+                            <field name="updated_count" widget="statinfo" string="Actualizadas"/>
+                        </button>
                     </div>
+                    <widget name="web_ribbon" title="Reemplazada" bg_color="text-bg-secondary" invisible="is_current"/>
                     <div class="oe_title">
                         <h1><field name="name"/></h1>
                     </div>
@@ -45,8 +52,53 @@
                             <field name="file_hash" groups="base.group_no_one"/>
                         </group>
                     </group>
+                    <field name="version_count" invisible="True"/>
+                    <notebook invisible="version_count &lt;= 1">
+                        <page string="Versiones" name="versions">
+                            <group>
+                                <group>
+                                    <field name="version"/>
+                                    <field name="is_current"/>
+                                    <field name="previous_batch_id" invisible="not previous_batch_id"/>
+                                </group>
+                                <group invisible="version == 1">
+                                    <field name="unchanged_count"/>
+                                    <field name="updated_count"/>
+                                    <field name="added_count"/>
+                                    <field name="removed_count"/>
+                                </group>
+                            </group>
+                            <field name="version_ids" nolabel="1">
+                                <list create="False" delete="False" decoration-bf="is_current">
+                                    <field name="version"/>
+                                    <field name="create_date" string="Importada el"/>
+                                    <field name="create_uid" string="Por" widget="many2one_avatar_user"/>
+                                    <field name="record_count"/>
+                                    <field name="updated_count"/>
+                                    <field name="added_count"/>
+                                    <field name="removed_count"/>
+                                    <field name="is_current"/>
+                                    <button name="action_restore" type="object" string="Restaurar" icon="fa-undo"
+                                            invisible="is_current" groups="sales_import_analytics.group_manager"
+                                            confirm="Esta versión pasará a ser la vigente y el tablero contará sus ventas. ¿Continuar?"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
                 </sheet>
             </form>
+        </field>
+    </record>
+
+    <record id="sales_import_batch_view_search" model="ir.ui.view">
+        <field name="name">sales.import.batch.search</field>
+        <field name="model">sales.import.batch</field>
+        <field name="arch" type="xml">
+            <search string="Buscar lotes">
+                <field name="name"/>
+                <filter name="filter_current" string="Vigentes" domain="[('is_current', '=', True)]"/>
+                <filter name="filter_superseded" string="Reemplazadas" domain="[('is_current', '=', False)]"/>
+            </search>
         </field>
     </record>
 
@@ -54,6 +106,8 @@
         <field name="name">Lotes de importación</field>
         <field name="res_model">sales.import.batch</field>
         <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="sales_import_batch_view_search"/>
+        <field name="context">{'search_default_filter_current': 1}</field>
     </record>
 
 </odoo>

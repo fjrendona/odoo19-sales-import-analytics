@@ -1,5 +1,7 @@
 import datetime
+import hashlib
 import io
+import json
 import zipfile
 from unittest.mock import patch
 
@@ -210,3 +212,42 @@ class TestSalesExcelParserErrors(ParserCase):
         with patch.object(sales_excel_parser, "MAX_DATA_ROWS", 3):
             result = parse([VALID_ROW] * 4)
         self.assertSingleError(result, None, "máximo de 3 filas")
+
+
+@tagged("post_install", "-at_install")
+class TestSalesExcelParserReference(ParserCase):
+    """La columna Referencia es opcional; si viene, identifica cada venta."""
+
+    HEADERS = [*SALES_HEADERS, "Referencia"]
+
+    def test_reference_column_is_optional(self):
+        (sale,) = parse([VALID_ROW]).rows
+        self.assertIsNone(sale.reference)
+
+    def test_reference_is_read_as_text(self):
+        result = parse([[*VALID_ROW, " FV  001 "], [*VALID_ROW, 1002.0]], headers=self.HEADERS)
+        self.assertFalse(result.errors)
+        self.assertEqual([sale.reference for sale in result.rows], ["FV 001", "1002"])
+
+    def test_reference_is_required_when_the_column_exists(self):
+        result = parse([[*VALID_ROW, None]], headers=self.HEADERS)
+        self.assertEqual(self.messages(result), ["Fila 2 · Referencia: Campo obligatorio."])
+
+    def test_repeated_reference_is_a_row_error(self):
+        result = parse([[*VALID_ROW, "FV-1"], [*VALID_ROW, "FV-2"], [*VALID_ROW, "FV-1"]], headers=self.HEADERS)
+        self.assertEqual(
+            self.messages(result), ["Fila 4 · Referencia: La referencia «FV-1» ya aparece en la fila 2."]
+        )
+
+    def test_fingerprint_without_reference_is_unchanged(self):
+        # Los lotes importados antes de añadir la columna conservan su huella.
+        (sale,) = parse([VALID_ROW]).rows
+        legacy = [[
+            "2026-06-01", "sia cliente a", "sia juan pérez", "sia producto 1", 2.0, 50000.0, 100000.0, "confirmed",
+        ]]
+        self.assertEqual(content_fingerprint([sale]), hashlib.sha256(json.dumps(legacy).encode()).hexdigest())
+
+    def test_fingerprint_includes_reference(self):
+        first = parse([[*VALID_ROW, "FV-1"]], headers=self.HEADERS).rows
+        second = parse([[*VALID_ROW, "FV-2"]], headers=self.HEADERS).rows
+        self.assertNotEqual(content_fingerprint(first), content_fingerprint(second))

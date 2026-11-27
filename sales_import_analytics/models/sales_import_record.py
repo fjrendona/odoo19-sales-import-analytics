@@ -12,6 +12,12 @@ SALE_STATES = [
     ("cancelled", "Cancelada"),
 ]
 
+CHANGE_TYPES = [
+    ("unchanged", "Sin cambios"),
+    ("updated", "Actualizada"),
+    ("added", "Nueva"),
+]
+
 
 class SalesImportRecord(models.Model):
     """Venta importada. Sus invariantes viven aquí, no en el asistente, para que
@@ -41,12 +47,31 @@ class SalesImportRecord(models.Model):
     state = fields.Selection(
         SALE_STATES, string="Estado", required=True, index=True, default="draft"
     )
+    reference = fields.Char(
+        string="Referencia",
+        index=True,
+        help="Identificador de la venta en el archivo (p. ej. el número de factura). "
+        "Permite comparar versiones de un lote fila por fila.",
+    )
     batch_id = fields.Many2one(
         "sales.import.batch",
         string="Lote de importación",
         index=True,
         ondelete="cascade",
         readonly=True,
+    )
+    change_type = fields.Selection(
+        CHANGE_TYPES,
+        string="Cambio respecto a la versión anterior",
+        readonly=True,
+    )
+    is_current = fields.Boolean(
+        string="Versión vigente",
+        compute="_compute_is_current",
+        store=True,
+        index=True,
+        help="El tablero solo cuenta las ventas vigentes: las creadas a mano y las de "
+        "la versión vigente de cada lote.",
     )
     company_id = fields.Many2one(
         "res.company",
@@ -65,6 +90,15 @@ class SalesImportRecord(models.Model):
     _amount_total_positive = models.Constraint(
         "CHECK(amount_total > 0)", "El valor total debe ser mayor que cero."
     )
+    _batch_reference_unique = models.UniqueIndex(
+        "(batch_id, reference) WHERE reference IS NOT NULL",
+        "La referencia de una venta no puede repetirse dentro del mismo lote.",
+    )
+
+    @api.depends("batch_id.is_current")
+    def _compute_is_current(self):
+        for record in self:
+            record.is_current = not record.batch_id or record.batch_id.is_current
 
     @api.model_create_multi
     def create(self, vals_list):

@@ -6,25 +6,84 @@
         <field name="model">sales.import.wizard</field>
         <field name="arch" type="xml">
             <form string="Importar ventas desde Excel">
-                <div class="alert alert-warning" role="alert" invisible="not duplicate_batch_id">
+                <field name="step" invisible="True"/>
+                <field name="match_type" invisible="True"/>
+
+                <!-- Paso 1: archivo -->
+                <div class="alert alert-warning" role="alert" invisible="step != 'upload' or not duplicate_batch_id">
                     Este archivo ya se importó en el lote
                     <field name="duplicate_batch_id" readonly="True" class="fw-bold"/>.
                     Marque «Importar de todas formas» para importarlo otra vez.
                 </div>
-                <group>
-                    <field name="file" filename="file_name" required="True"/>
+                <group invisible="step != 'upload'">
+                    <field name="file" filename="file_name" required="step == 'upload'"/>
                     <field name="file_name" invisible="True"/>
                     <field name="force_reimport" invisible="not duplicate_batch_id"/>
                 </group>
-                <div class="text-muted">
+                <div class="text-muted" invisible="step != 'upload'">
                     Columnas: Fecha, Cliente, Vendedor, Producto, Cantidad, Valor Unitario,
-                    Valor Total y Estado (Borrador, Confirmada o Cancelada). Si alguna fila tiene
-                    errores no se importa nada y se muestran todos los errores.
+                    Valor Total y Estado (Borrador, Confirmada o Cancelada). La columna Referencia
+                    (p. ej. el número de factura) es opcional: si viene, permite reconocer una nueva
+                    versión de un lote ya importado. Si alguna fila tiene errores no se importa nada
+                    y se muestran todos los errores.
                     <field name="limits_note" class="d-inline" readonly="True"/>
                 </div>
+
+                <!-- Paso 2: comparación con un lote existente -->
+                <div class="alert alert-info" role="alert" invisible="step != 'compare'">
+                    <p class="mb-1" invisible="match_type != 'version'">
+                        <strong>Parece una nueva versión de un lote ya importado.</strong>
+                    </p>
+                    <p class="mb-1" invisible="match_type != 'partial'">
+                        <strong>Parece una corrección parcial de un lote ya importado:</strong>
+                        trae pocas ventas y casi todas ya existen. Las ventas del lote que no vienen
+                        en el archivo no se tocan.
+                    </p>
+                    <field name="match_summary" readonly="True"/>
+                    <p class="mb-0 mt-1">Todavía no se ha guardado nada.</p>
+                </div>
+                <group invisible="step != 'compare'">
+                    <group>
+                        <field name="candidate_batch_id"/>
+                        <field name="unchanged_count"/>
+                    </group>
+                    <group>
+                        <field name="updated_count"/>
+                        <field name="added_count"/>
+                        <field name="missing_count" invisible="match_type != 'version'"/>
+                    </group>
+                </group>
+                <field name="line_ids" invisible="step != 'compare'" nolabel="1">
+                    <list editable="bottom" create="False" delete="False"
+                          decoration-warning="change_type == 'updated'"
+                          decoration-success="change_type == 'added'"
+                          decoration-danger="change_type == 'missing'">
+                        <field name="reference" width="90px"/>
+                        <field name="change_type" widget="badge" width="150px"/>
+                        <field name="summary_before"/>
+                        <field name="summary_after"/>
+                        <field name="confirm_removal" width="80px" readonly="change_type != 'missing'"
+                               invisible="change_type != 'missing'"/>
+                    </list>
+                </field>
+                <div class="text-muted" invisible="step != 'compare' or match_type != 'version' or not missing_count">
+                    Las ventas que faltan en el archivo se conservan en la nueva versión salvo que marque
+                    «Eliminar».
+                </div>
+
                 <footer>
                     <button name="action_import" string="Importar" type="object" class="btn-primary"
-                            data-hotkey="q"/>
+                            data-hotkey="q" invisible="step != 'upload'"/>
+                    <button name="action_save_version" string="Guardar como nueva versión" type="object"
+                            class="btn-primary" data-hotkey="q"
+                            invisible="step != 'compare' or match_type != 'version'"/>
+                    <button name="action_replace_batch" string="Reemplazar lote" type="object"
+                            class="btn-secondary" data-hotkey="r"
+                            invisible="step != 'compare' or match_type != 'version'"
+                            confirm="Se borrarán el lote, todas sus versiones y sus ventas, y se importará el archivo como un lote nuevo sin historial. ¿Continuar?"/>
+                    <button name="action_apply_changes" string="Aplicar solo los cambios al lote existente"
+                            type="object" class="btn-primary" data-hotkey="q"
+                            invisible="step != 'compare' or match_type != 'partial'"/>
                     <button string="Cancelar" special="cancel" class="btn-secondary" data-hotkey="x"/>
                 </footer>
             </form>

@@ -35,7 +35,11 @@ SALES_COLUMNS = {
     "valor total": ("amount_total", "Valor Total"),
     "estado": ("state", "Estado"),
 }
-COLUMN_LABELS = dict(SALES_COLUMNS.values())  # clave del campo -> etiqueta
+# Columnas opcionales: si la cabecera existe, la celda es obligatoria en cada fila.
+OPTIONAL_COLUMNS = {
+    "referencia": ("reference", "Referencia"),
+}
+COLUMN_LABELS = dict(SALES_COLUMNS.values()) | dict(OPTIONAL_COLUMNS.values())  # clave -> etiqueta
 
 # Variantes normalizadas del estado -> valor de la selección del modelo.
 STATE_ALIASES = {
@@ -69,6 +73,7 @@ class SaleRow:
     price_unit: float
     amount_total: float
     state: str
+    reference: str | None = None  # identifica la venta entre versiones de un lote
 
 
 @dataclass(frozen=True, eq=False)  # LazyGettext prohíbe __eq__/__hash__
@@ -150,7 +155,9 @@ def content_fingerprint(rows) -> str:
     Excel (y openpyxl) guardan metadatos como la fecha de guardado, así que el
     mismo contenido guardado dos veces produce bytes distintos. La huella usa las
     filas ya leídas (nombres normalizados, sin número de fila y sin importar el
-    orden), de modo que un archivo reguardado se reconoce como el mismo.
+    orden), de modo que un archivo reguardado se reconoce como el mismo. La
+    referencia solo entra si existe, para que los archivos sin esa columna
+    conserven la huella que tenían antes de añadirla.
     """
     canonical = sorted(
         [
@@ -162,6 +169,7 @@ def content_fingerprint(rows) -> str:
             row.price_unit,
             row.amount_total,
             row.state,
+            *([row.reference] if row.reference else []),
         ]
         for row in rows
     )
@@ -213,6 +221,7 @@ def _parse_sheet(sheet_rows, rules) -> ParseResult:
 
     if not data_rows:
         return _file_error(_lt("El archivo no contiene ventas."))
+    result.errors.extend(_repeated_reference_errors(result.rows))
     return result
 
 
@@ -224,10 +233,11 @@ def _find_header(sheet_rows):
 
 
 def _map_columns(header_values):
-    """Devuelve ``{clave_campo: índice}`` y las etiquetas de las columnas que faltan."""
+    """Devuelve ``{clave_campo: índice}`` y las etiquetas de las columnas obligatorias que faltan."""
+    known_columns = SALES_COLUMNS | OPTIONAL_COLUMNS
     column_index = {}
     for index, value in enumerate(header_values):
-        column = SALES_COLUMNS.get(normalize_text(value)) if value is not None else None
+        column = known_columns.get(normalize_text(value)) if value is not None else None
         if column and column[0] not in column_index:
             column_index[column[0]] = index
     missing = [label for key, label in SALES_COLUMNS.values() if key not in column_index]
@@ -238,9 +248,28 @@ def _is_empty(values) -> bool:
     return all(value is None or (isinstance(value, str) and not value.strip()) for value in values)
 
 
+def _repeated_reference_errors(rows) -> list[ParseError]:
+    """La referencia identifica la venta al comparar versiones: no puede repetirse."""
+    first_row_by_reference = {}
+    errors = []
+    for row in rows:
+        if not row.reference:
+            continue
+        first_row = first_row_by_reference.setdefault(row.reference, row.row_number)
+        if first_row != row.row_number:
+            errors.append(ParseError(row.row_number, COLUMN_LABELS["reference"], _lt(
+                "La referencia «%(reference)s» ya aparece en la fila %(row)s.",
+                reference=row.reference,
+                row=first_row,
+            )))
+    return errors
+
+
 def _parse_row(row_number, values, column_index, rules):
     parsed, errors = {}, []
-    for key, label in SALES_COLUMNS.values():
+    for key, label in COLUMN_LABELS.items():
+        if key not in column_index:  # columna opcional ausente
+            continue
         index = column_index[key]
         raw = values[index] if index < len(values) else None
         try:
@@ -283,6 +312,13 @@ def _convert(key, raw):
 
 def _to_text(raw) -> str:
     return " ".join(str(raw).split())
+
+
+def _to_reference(raw) -> str:
+    """Un número de factura escrito en una celda numérica llega como 1001.0."""
+    if isinstance(raw, float) and raw.is_integer():
+        raw = int(raw)
+    return _to_text(raw)
 
 
 def _to_date(raw) -> datetime.date:
@@ -337,4 +373,5 @@ _CONVERTERS = {
     "price_unit": _to_number,
     "amount_total": _to_number,
     "state": _to_state,
+    "reference": _to_reference,
 }

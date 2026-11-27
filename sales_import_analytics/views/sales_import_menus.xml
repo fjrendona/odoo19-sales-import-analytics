@@ -36,6 +36,13 @@
               action="action_sales_import_batch"
               sequence="10"/>
 
+    <menuitem id="menu_sales_import_settings"
+              name="Ajustes"
+              parent="menu_sales_import_config"
+              action="action_sales_import_config_settings"
+              groups="base.group_system"
+              sequence="5"/>
+
     <menuitem id="menu_sales_import_salespersons"
               name="Vendedores"
               parent="menu_sales_import_config"

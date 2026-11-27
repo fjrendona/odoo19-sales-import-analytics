@@ -1,5 +1,5 @@
 import { defineMailModels } from "@mail/../tests/mail_test_helpers";
-import { advanceTime, describe, destroy, expect, test } from "@odoo/hoot";
+import { advanceTime, Deferred, describe, destroy, expect, test } from "@odoo/hoot";
 import { animationFrame, click, press } from "@odoo/hoot-dom";
 import {
     defineModels,
@@ -119,4 +119,32 @@ test("an inline edition is not discarded by a notification", async () => {
     await press("Escape"); // descarta la edición
     await advanceTime(RELOAD_INTERVAL_MS);
     await expect.waitForSteps(["reload"]);
+});
+
+test("a notification during the initial load does not break the list", async () => {
+    // Caso real: al guardar una versión se abren las ventas del lote y el aviso de
+    // bus de esas mismas ventas llega mientras la lista aún hace su carga inicial.
+    // La lista se monta antes de tener datos (carga diferida), así que una recarga
+    // en ese momento descartaba la carga inicial y la dejaba en blanco.
+    const initialLoad = new Deferred();
+    let isInitialLoad = true;
+    onRpc("web_search_read", async () => {
+        expect.step("load");
+        if (isInitialLoad) {
+            isInitialLoad = false;
+            await initialLoad;
+        }
+    });
+    await mountView({ type: "list", resModel: "sales.import.record", arch: LIST_ARCH });
+    notifyNewRecords();
+    await animationFrame();
+    expect.verifySteps(["load"]); // la recarga espera a que termine la carga inicial
+    initialLoad.resolve();
+    await animationFrame();
+    expect(".o_data_row").toHaveCount(2);
+    // El aviso no se pierde: la lista recarga en la siguiente ventana del throttle.
+    await advanceTime(RELOAD_INTERVAL_MS);
+    await animationFrame();
+    expect.verifySteps(["load"]);
+    expect(".o_data_row").toHaveCount(2);
 });

@@ -39,9 +39,13 @@ export class SalesRealtimeListController extends ListController {
         if (status(this) === "destroyed") {
             return;
         }
-        if (this.isUserBusy()) {
-            // No descartar una edición en línea ni una selección de filas en
-            // curso: reintentar en la siguiente ventana del throttle.
+        // Primera carga aún en curso (el aviso llegó mientras se abría la lista, p. ej.
+        // las ventas de un lote recién guardado): la lista se monta antes de tener
+        // datos y model.load() descarta la carga anterior (keepLast), así que la
+        // carga inicial no terminaría nunca y la lista quedaría en blanco.
+        // Tampoco se descarta una edición en línea ni una selección de filas.
+        // En ambos casos se reintenta en la siguiente ventana del throttle.
+        if (!this.model.isReady || this.isUserBusy()) {
             this.reloadThrottle.call();
             return;
         }

@@ -6,6 +6,7 @@
         <field name="model">sales.import.record</field>
         <field name="arch" type="xml">
             <list string="Ventas" js_class="sales_import_realtime_list">
+                <field name="reference" optional="show"/>
                 <field name="date"/>
                 <field name="partner_id"/>
                 <field name="salesperson_id"/>
@@ -18,6 +19,7 @@
                        decoration-success="state == 'confirmed'"
                        decoration-info="state == 'draft'"
                        decoration-muted="state == 'cancelled'"/>
+                <field name="change_type" optional="hide"/>
                 <field name="company_id" groups="base.group_multi_company" optional="hide"/>
             </list>
         </field>
@@ -44,7 +46,9 @@
                             <field name="price_unit"/>
                             <field name="amount_total"/>
                             <field name="currency_id" invisible="True"/>
+                            <field name="reference"/>
                             <field name="batch_id" invisible="not batch_id"/>
+                            <field name="change_type" invisible="not change_type"/>
                             <field name="company_id" groups="base.group_multi_company"/>
                         </group>
                     </group>
@@ -61,6 +65,7 @@
                 <field name="partner_id"/>
                 <field name="salesperson_id"/>
                 <field name="product_id"/>
+                <field name="reference"/>
                 <field name="batch_id"/>
                 <filter name="filter_confirmed" string="Confirmadas" domain="[('state', '=', 'confirmed')]"/>
                 <filter name="filter_draft" string="Borrador" domain="[('state', '=', 'draft')]"/>
@@ -108,6 +113,8 @@
         <field name="res_model">sales.import.record</field>
         <field name="view_mode">graph,pivot,list,form</field>
         <field name="search_view_id" ref="sales_import_record_view_search"/>
+        <!-- Solo la versión vigente de cada lote: las reemplazadas duplicarían las ventas. -->
+        <field name="domain">[('is_current', '=', True)]</field>
         <field name="context">{'pivot_measures': ['amount_total', '__count']}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Aún no hay ventas</p>
@@ -120,6 +127,7 @@
         <field name="res_model">sales.import.record</field>
         <field name="view_mode">list,form,graph,pivot</field>
         <field name="search_view_id" ref="sales_import_record_view_search"/>
+        <field name="domain">[('is_current', '=', True)]</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Aún no hay ventas</p>
             <p>Importa el Excel de ventas del mes desde el menú Importar Excel.</p>
