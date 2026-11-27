@@ -48,6 +48,13 @@ class TestSalesImportWizard(SalesImportCommon):
         self.assertIn("20 ventas importadas", action["params"]["message"])
         self.assertEqual(action["params"]["next"]["domain"], [("batch_id", "=", batch.id)])
 
+    def test_redirect_action_is_executable_by_the_client(self):
+        # La acción viaja anidada en params.next: el servidor no la completa con
+        # clean_action, así que debe traer `views` o el cliente falla con un
+        # TypeError (action.views.map) y no redirige al lote.
+        action = self._import([VALID_ROW])
+        self.assertEqual(action["params"]["next"]["views"], [(False, "list"), (False, "form")])
+
     def test_name_variants_resolve_to_a_single_partner(self):
         self._import([sale_row(partner=name) for name in ("SIA Cliente B", "sia cliente b ", "SIA CLIENTE  B")])
         partners = self._batch().record_ids.partner_id

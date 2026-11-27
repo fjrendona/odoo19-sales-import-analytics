@@ -6,7 +6,7 @@ Importación de ventas mensuales desde Excel mediante un asistente con validaci�
 completa (todo o nada), tablero de análisis comercial (gráfico y tabla dinámica)
 y actualización en tiempo real de la lista de ventas mediante el bus de Odoo.
     """,
-    "version": "19.0.1.0.7",
+    "version": "19.0.1.0.8",
     "category": "Sales",
     "author": "Francisco Javier Rendon Arroyave",
     "license": "LGPL-3",
